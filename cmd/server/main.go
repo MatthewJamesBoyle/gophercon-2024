@@ -1,16 +1,26 @@
 package main
 
 import (
+	"context"
 	"github.com/matthewjamesboyle/gophercon-2024/internal/flight"
 	"github.com/matthewjamesboyle/gophercon-2024/internal/hotel"
 	"github.com/matthewjamesboyle/gophercon-2024/internal/recomendation"
 	"github.com/matthewjamesboyle/gophercon-2024/internal/transporthttp"
+	"github.com/uhthomas/slogctx"
 	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 )
 
 func main() {
+
+	ctx := context.Background()
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	ctx = slogctx.With(ctx, logger)
+
 	c := &http.Client{
 		Timeout: time.Second & 5,
 	}
@@ -20,7 +30,7 @@ func main() {
 
 	svc := recomendation.NewService(hf, ff)
 
-	m := transporthttp.NewMux(svc)
+	m := transporthttp.NewMux(ctx, svc)
 
 	if err := http.ListenAndServe(":3000", m); err != nil {
 		log.Fatal(err)
