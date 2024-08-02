@@ -27,7 +27,7 @@ func NewMux(ctx context.Context, svc *recomendation.Service) *http.ServeMux {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			default:
-				slogctx.From(ctx).Error("unhandled error", err)
+				slogctx.From(ctx).Error("svc_get", "unhandled error", err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}

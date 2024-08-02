@@ -12,5 +12,5 @@ func NewService() *Service {
 
 func (s Service) Find(ctx context.Context, budget int) (string, error) {
 	//TODO: implement once we stop being sponsored
-	return "Marriott", nil
+	return "British Airways", nil
 }
