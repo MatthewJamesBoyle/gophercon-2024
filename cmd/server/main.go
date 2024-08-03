@@ -16,9 +16,15 @@ import (
 
 func main() {
 
-	ctx := context.Background()
+	logFile, err := os.OpenFile("application.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("Failed to open log file: %v", err)
+	}
+	defer logFile.Close() // Ensure the file is closed when the program exits
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	ctx := context.Background()
+	// Create a logger that writes to the log file
+	logger := slog.New(slog.NewJSONHandler(logFile, nil))
 	ctx = slogctx.With(ctx, logger)
 
 	c := &http.Client{
@@ -32,6 +38,7 @@ func main() {
 
 	m := transporthttp.NewMux(ctx, svc)
 
+	logger.InfoContext(ctx, "app_starting")
 	if err := http.ListenAndServe(":3000", m); err != nil {
 		log.Fatal(err)
 	}
