@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type finder interface {
@@ -35,15 +37,22 @@ func (svc *Service) Get(ctx context.Context, budgetInPounds int) (*Recommendatio
 	}
 
 	// use errGroup to make this faster
+	tr := trace.SpanFromContext(ctx).TracerProvider().Tracer("gophercon-2024")
+	ctx, hotelSpan := tr.Start(ctx, "get_hotel")
 	hotel, err := svc.hotelFinder.Find(ctx, budgetInPounds)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find hotel in budget: %w", err)
 	}
+	hotelSpan.AddEvent("hotel_selected", trace.WithAttributes(attribute.String("hotel", hotel)))
+	hotelSpan.End()
 
+	ctx, flightSpan := tr.Start(ctx, "get_flight")
 	flight, err := svc.flightFinder.Find(ctx, budgetInPounds)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find flight in budget: %w", err)
 	}
+	flightSpan.End()
+
 	return &Recommendation{
 		Hotel:  hotel,
 		Flight: flight,

@@ -4,23 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/VictoriaMetrics/metrics"
 	"github.com/matthewjamesboyle/gophercon-2024/internal/recomendation"
 	"github.com/uhthomas/slogctx"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 	"net/http"
 	"strconv"
 	"time"
 )
 
 var (
-	requestsTotal   = "requests_total{status_code=%d}"
 	requestDuration = metrics.NewSummary("request_duration_seconds")
 )
 
-func NewMux(ctx context.Context, svc *recomendation.Service) *http.ServeMux {
+func NewMux(ctx context.Context, svc *recomendation.Service) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/trip/", func(w http.ResponseWriter, r *http.Request) {
+
+	handleFunc := func(pattern string, handlerFunc func(http.ResponseWriter, *http.Request)) {
+		// Configure the "http.route" for the HTTP instrumentation.
+		handler := otelhttp.WithRouteTag(pattern, http.HandlerFunc(handlerFunc))
+		mux.Handle(pattern, handler)
+	}
+
+	handleFunc("/trip/", func(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
 		defer func() {
 			recordDuration(startTime)
@@ -31,39 +38,39 @@ func NewMux(ctx context.Context, svc *recomendation.Service) *http.ServeMux {
 		b, err := strconv.ParseInt(budget, 10, 64)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusBadRequest))
 			return
 		}
 
-		// Get recommendation
+		tr := trace.SpanFromContext(r.Context()).TracerProvider().Tracer("gophercon-2024")
+		ctx, span := tr.Start(r.Context(), "get_recommendation")
+		defer span.End()
+
 		rec, err := svc.Get(ctx, int(b))
 		if err != nil {
 			switch {
 			case errors.Is(err, recomendation.ErrBudgetOutOfBounds):
 				w.WriteHeader(http.StatusBadRequest)
-				metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusBadRequest))
 			default:
 				slogctx.From(ctx).Error("unhandled error", err)
 				w.WriteHeader(http.StatusInternalServerError)
-				metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusInternalServerError))
 			}
 			return
 		}
+		span.End()
 
 		// Marshal response
 		res, err := json.Marshal(rec)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusInternalServerError))
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusOK))
 		_, _ = w.Write(res)
 	})
 
-	return mux
+	handler := otelhttp.NewHandler(mux, "/")
+	return handler
 }
 
 func recordDuration(startTime time.Time) {
