@@ -22,30 +22,23 @@ func NewMux(ctx context.Context, svc *recomendation.Service) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/trip/", func(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
-		defer func() {
-			recordDuration(startTime)
-		}()
+		defer recordDuration(startTime)
 
 		// Extract budget from query parameters and parse it
 		budget := r.URL.Query().Get("budget")
 		b, err := strconv.ParseInt(budget, 10, 64)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusBadRequest))
+			httpError(ctx, w, http.StatusBadRequest, err)
 			return
 		}
 
 		// Get recommendation
 		rec, err := svc.Get(ctx, int(b))
 		if err != nil {
-			switch {
-			case errors.Is(err, recomendation.ErrBudgetOutOfBounds):
-				w.WriteHeader(http.StatusBadRequest)
-				metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusBadRequest))
-			default:
-				slogctx.From(ctx).Error("unhandled error", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusInternalServerError))
+			if errors.Is(err, recomendation.ErrBudgetOutOfBounds) {
+				httpError(ctx, w, http.StatusBadRequest, err)
+			} else {
+				httpError(ctx, w, http.StatusInternalServerError, err)
 			}
 			return
 		}
@@ -53,17 +46,27 @@ func NewMux(ctx context.Context, svc *recomendation.Service) *http.ServeMux {
 		// Marshal response
 		res, err := json.Marshal(rec)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusInternalServerError))
+			httpError(ctx, w, http.StatusInternalServerError, err)
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusOK))
+		metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, http.StatusOK)).Inc()
 		_, _ = w.Write(res)
 	})
 
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		metrics.WritePrometheus(w, true)
+	})
+
 	return mux
+}
+
+func httpError(ctx context.Context, w http.ResponseWriter, status int, err error) {
+	slogctx.From(ctx).Error("request error", err)
+	w.WriteHeader(status)
+	metrics.GetOrCreateCounter(fmt.Sprintf(requestsTotal, status)).Inc()
 }
 
 func recordDuration(startTime time.Time) {
