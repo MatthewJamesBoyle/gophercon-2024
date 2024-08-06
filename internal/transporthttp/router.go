@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/matthewjamesboyle/gophercon-2024/internal/recomendation"
-	"github.com/uhthomas/slogctx"
 	"net/http"
 	"strconv"
 )
@@ -27,7 +26,6 @@ func NewMux(ctx context.Context, svc *recomendation.Service) *http.ServeMux {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			default:
-				slogctx.From(ctx).Error("svc_get", "unhandled error", err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
