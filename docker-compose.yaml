@@ -7,3 +7,9 @@ services:
       - "14268:14268" # Collector
       - "14250:14250" # gRPC
       - "9411:9411"   # Zipkin
+  hotelapi:
+    build:
+      context: ./internal/mock/hotelapi/
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
